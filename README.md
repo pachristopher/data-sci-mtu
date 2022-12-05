@@ -22,7 +22,7 @@ The objective of this assignment is to develop and test a model for forecasting 
 
 - **Technology stack chosen:** [RStudio: forecast, imputeTS packages](https://pkg.robjhyndman.com/forecast/)
 - **Data:** [stat8008/proj1-ts/elec.rds](https://archive.ics.uci.edu/ml/datasets/individual+household+electric+power+consumption)
-- **Notebook:** [proj_pdf2.Rmd](./data8008/proj1-ts/proj_pdf2.Rmd)
+- **Notebook:** [proj_pdf2.Rmd](./stat8008/proj1-ts/proj_pdf2.Rmd)
 
 #### Tasks:
 
