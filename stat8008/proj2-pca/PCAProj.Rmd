@@ -1,0 +1,394 @@
+---
+title: "STAT8008 PCA Project"
+author: "Paul Christopher, R00207143"
+date: "12/17/2021"
+output:
+  pdf_document:
+    fig_caption: yes
+  bookdown::pdf_document2:
+    fig_caption: yes
+bibliography: pcabib.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, comment='', warning = FALSE,
+            dev="cairo_pdf", fig.width=7, fig.height=3.5)
+if(!require(factoextra)) install.packages("factoextra")
+if(!require(FactoMineR)) install.packages("FactoMineR")
+if(!require(ggcorrplot)) install.packages("ggcorrplot")
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(ggthemes)) install.packages("ggthemes")
+if(!require(stargazer)) install.packages("stargazer")
+if(!require(parameters)) install.packages("parameters")
+if(!require(foreign)) install.packages("foreign")
+library(tidyverse); library(ggthemes)
+library(stargazer)
+library(parameters)
+library(factoextra)
+library(FactoMineR)
+```
+
+```{r set-theme}
+theme_set(theme_tufte())
+```
+
+# Introduction
+
+Cars were selected at random from among 93 American passenger car models that were listed in both the Consumer Reports issue and the PACE Buying Guide magazines. Pickup trucks  and  Sport/Utility  vehicles  were  eliminated due to incomplete information  and duplicate models were listed at most once. The variables relevant to this project are defined as follows:
+
+| Variable Name | Description |
+| --- | --- |
+| Origin  | Manufacturing company origin: 1=”non-USA” or 2=”USA” |
+| Price | Price (in $1,000) |
+| Type  | Level: 1="Small" 2="Sporty" 3="Compact" 4="Midsize" 5="Large" 6="Van" |
+| Engine Size | Engine size (litres). |
+| RPM | RPM (revs per minute at maximum horsepower) |
+| Fuel.Tank.Capactity | Fuel tank capacity (US gallons) |
+| MPG.city | City MPG (miles per US gallon by EPA rating) |
+| Weight  | Weight (pounds) |
+| Horsepower | Horsepower of the car |
+
+# Preliminary cleaning and analysis
+
+```{r NAs, results='asis'}
+library(foreign)
+data <- read.spss("PCA_STAT8008_Project.sav", to.data.frame=TRUE)
+```
+
+```{r, data_clean}
+cars_origin.df = data[-57,-c(3,11:16)] ## Leave Origin and Type
+# remove Categorical / Text except Brand& model
+                         ## (57)remove mazda RX7 with "Rotative" cylinders
+
+## create var for row.names with Brand&Model
+n = dim(cars_origin.df)[1]
+car=NULL
+for(i in 1:n ){ ## create var for row.names with Brand&Model
+    car = rbind(car, paste( data[i,14], data[i,15], sep=" ") )
+              }
+## Create new dataframe with row names "cars"
+cars_origin.df = data.frame(cars_origin.df,row.names=car) 
+cars_origin.df[,8] = sapply(cars_origin.df[,8],as.numeric)
+```
+
+The original dataset was transformed so as to extract the make and model and use that for the row names. Some variables were removed, such as the number of passengers, insurance category and the length of the car, which were deemed to be uninformative. One row was deleted due to the fact that its cylinder was classed as 'rotary', rather than being a numeric value. That brought the total number of observations down to 92 from 93. A further problem with the 'cylinders' variable was found in that it was coded as a factor. This would have prevented various EDA and PCA methods being amenable to this variable. This was transformed into a numeric variable using the `as.numeric` method. 
+
+A preliminary summary of the dataset is shown at \autoref{data_sum}. 
+
+```{r, data_sum, results='asis'}
+stargazer(cars_origin.df, type='latex', title='Summary description of the dataset \\label{data_sum}', header=F)
+```
+
+A pairs plot of the remaining variables using the `pairs` function is shown at \autoref{cars_pairs}. This shows that all of the variables, apart from RPM, are highly correlated with each other. A slight exception is that RPM seems to be reasonably correlated with fuel tank capacity, and, to a lesser extent, weight.  
+
+
+```{r, cars_pairs, fig.cap='Pairs plot for cars data. \\label{cars_pairs}', fig.width=7, fig.height=5.5}
+pairs(cars_origin.df[,-c(1)])
+```
+
+A correlation matrix is shown at \autoref{car_cormat}.^[Using the `ggcorrplot` package - see @corrplot2021.]
+
+```{r, car_cormat, fig.cap='Correlation matrix for car dataset. \\label{car_cormat}', fig.width=8, fig.height=8}
+mcor <- cor(cars_origin.df[,-c(1)])
+library(ggcorrplot)
+ggcorrplot(mcor, hc.order=T, lab=T)
+```
+
+
+The relationship between three pairs of variables are examined a little more closely below.
+
+Firstly, the relationship between MPG and Horsepower is examined and a plot produced at \autoref{mpg_horse} (a). Secondly, the relationship between Fuel tank capacity and weight is examined and a plot produced at (b). Finally, the relationship between RPM and Price is examined and a plot produced at (c). 
+
+
+```{r, mpg_horse, fig.cap="Relationship between: MPG v Horsepower;\nfuel tank capacity v weight; RPM v Price. \\label{mpg_horse}", fig.show='hold', out.width='33%'}
+p1 <- ggplot(cars_origin.df, aes(x=MPG.city, y=Horsepower))
+p1 + geom_point() + geom_smooth(method = lm) + xlab('(a) Miles per gallon achieved in city driving')
+p2 <- ggplot(cars_origin.df, aes(x=Fuel.tank.capacity, y=Weight))
+p2 + geom_point() + geom_smooth(method = lm) + xlab('(b) Fuel tank capacity')
+p3 <- ggplot(cars_origin.df, aes(x=RPM, y=Price))
+p3 + geom_point() + geom_smooth(method = lm) + xlab('(c) revs. per minute at max horsepower')
+```
+
+
+
+## 3D Plots
+
+```{r, 3d, fig.cap='3D Plots with 2D regression planes \\label{3d}', fig.show='hold', out.width='50%'}
+library("scatterplot3d")
+attach(cars_origin.df)
+#order of variables in scatterplot3d function are x1 (width), x2 (depth), and y (height)
+s3d <- scatterplot3d(Cylinders,MPG.city,EngineSize, type = "p",highlight.3d = TRUE, pch = 20)
+# Add regression plane
+mod1 <- lm(MPG.city ~ Cylinders + EngineSize, data=cars_origin.df)
+s3d$plane3d(mod1,draw_polygon = TRUE, draw_lines = TRUE)
+# PLot 2 - Cyl v fuel v enginesize
+s3d2 <- scatterplot3d(Cylinders,Fuel.tank.capacity,EngineSize, type = "p",highlight.3d = TRUE, pch = 20)
+mod2 <- lm(EngineSize ~ Cylinders + Fuel.tank.capacity, data=cars_origin.df)
+s3d2$plane3d(mod2, draw_polygon = TRUE, draw_lines = TRUE)
+# Plot 3 - Horsepower v EngineSize v MPG
+s3d3 <- scatterplot3d(Horsepower,MPG.city,EngineSize, type = "p",highlight.3d = TRUE, pch = 20)
+mod3_3 <- lm(MPG.city ~ Horsepower + EngineSize, data = cars_origin.df)
+s3d3$plane3d(mod3_3, draw_polygon = TRUE, draw_lines = TRUE)
+# Plot 4 - 
+s3d4 <- scatterplot3d(Fuel.tank.capacity,Horsepower, MPG.city, type = "p",highlight.3d = TRUE, pch = 20)
+mod4_3 <- lm(Fuel.tank.capacity ~ Horsepower+MPG.city, data = cars_origin.df)
+s3d4$plane3d(mod4_3, draw_polygon = TRUE, draw_lines = TRUE)
+```
+
+## Is the data suitable for data reduction techniques?
+
+To answer this question, a Bartlett's Sphericity test was conducted. The results, shown below, confirm that there is sufficient correlation amongst the variables to carry out data reduction techniques such as PCA or factor analysis, with a $\chi^2$ value of 904 and an associated p-value of less than 0.001.^[Bartlett's (1951) test of sphericity tests whether a matrix (of correlations) is significantly different from an identity matrix. The test provides probability that the correlation matrix has significant correlations among at least some of the variables in a dataset: @param20.]
+
+```{r, sphericity}
+options(width=200)
+check_sphericity_bartlett(cars_origin.df[,-1])
+```
+
+# Principal Components Analysis
+
+In the first instance, PCA was performed using the `prcomp` function from base R. The variables were standardised before performing the PCA, using the `scale = TRUE` parameter. In parallel, the same PCA was done using the `PCA` function from the `FactoMineR` package. Results from the two models are examined and compared under various headings below.
+
+### (a) Eigenvalues and eigenvectors
+
+Using the `prcomp` function the eigenvalues for each component were as follows: 
+
+```{r, eigen}
+pc_scale <- prcomp(cars_origin.df[,-1], scale = TRUE)
+# eigen values
+ev = (pc_scale$sdev)^2; ev
+```
+
+The eigenvectors are printed below at \autoref{eigenvec}.
+
+```{r, eigenvec}
+knitr::kable(pc_scale$rotation, digits = 2, caption = 'Eigenvectors as calculated by `prcomp`. \\label{eigenvec}')
+```
+
+Using the `FactoMineR` package, the eigenvalues are reported at \autoref{mineR_sum}. This output also includes the percentage of variance and cumulative percentage of variance. 
+
+```{r, mineR_sum}
+mod_miner <- PCA(cars_origin.df[,-1], scale.unit = TRUE, graph=FALSE)
+knitr::kable(mod_miner$eig, digits=3, caption='Eigenvalues and percentage of variance from FactoMineR \\label{mineR_sum}')
+```
+
+
+### (b) Amount of information explained by components
+
+The amount of information explained by the components as well as the cumulative variance from the model created by the `prcomp` function can be seen in \autoref{pca_sum}. The same information, as calculated by `FactoMineR` can be seen at \autoref{mineR_sum}.
+
+```{r, pca_sum}
+knitr::kable(summary(pc_scale)[6], digits=3, caption = 'Information and variance explained by components (as calculated by `prcomp`) \\label{pca_sum}')
+```
+
+### (c) Factor loadings
+
+The factor loadings calculated by `prcomp` for each original variable are displayed at \autoref{eigenvec}. They are equivalent to the eigenvectors for each component. They are computed from the correlation matrix^[Usually denoted S.] of the original m x n data matrix^[Here denoted D.], where m are the number of observations and n are the number of variables^[Sometimes called attributes.] in the data matrix and where $\lambda_{i}, i \in \{1,...,n\}$, are the eigenvalues of S. 
+It can be computed using the spectral decomposition theorem which states as follows: *For any real, symmetric N x N matrix S, there exists an orthogonal matrix U such that*:
+
+\begin{align*}
+B =
+\begin{pmatrix}
+\lambda_{1} &0 &... \\
+0 &\lambda_{2} &... \\
+... \\
+... &0 &\lambda_{n}
+\end{pmatrix}
+= U^{-1}SU
+\end{align*}
+
+*is a diagonal matrix*.
+
+The entries $\lambda_{i}$ in the diagonal matrix are the eigenvalues of matrix S and the column vectors of U are the eigenvectors.^[from @janert_data_2011, p.328 *et. seq.*] The eigenvectors represent the principal components of S and the elements of the eigenvectors of S are the 'coefficients' or 'loadings' of the principal components. The equivalent output from `FactoMineR` can be seen at \autoref{facto_cor}.
+
+However, most software packages, such as R, do not use this method, instead opting for the more computationally efficient singular value decomposition (SVD) method. This is the method used by `prcomp`.^[However, the other base R function, `princomp`, uses the spectral decomposition approach. @soga18. Despite the different algorithms, both `prcomp` and `princomp` produced the same results on this dataset. The results from `printcomp` are not produced here for reasons of brevity but can be checked on a separate R script file on request.] 
+
+The scores for the first five cars calculated by `prcomp` are shown at \autoref{scores}. The scores can be interpreted as being the co-ordinates of the observations on the new, calculated, principal components or dimensions. 
+
+```{r, scores}
+knitr::kable(head(pc_scale$x, n=5L), digits=3, caption = 'Scores of the rotated data \\label{scores}')
+```
+
+
+### (d) Correlation between original variables and principal components
+
+The correlation between the original components and each principal component is provided, in `prcomp`, by the eigenvector associated with that principal component. So, from an examination of \autoref{eigenvec}, one can see that the first principal component is positively correlated, roughly to the same extent, with all of the original variables, apart from RPM. 
+
+Similarly, the second principal component is most significantly correlated with RPM and only weakly so with all the other original variables. This suggests that the first principal component represents all of the variables apart from RPM, whilst the second PC represents RPM. 
+
+A correlation matrix between the original variables and the first two PCs produced by `FactoMineR` is at \autoref{facto_cor}.
+
+```{r, facto_cor}
+knitr::kable(mod_miner$var$coord, digits = 3, caption = 'Correlation matrix between variables and PCs produced by FacotMineR \\label{facto_cor}')
+```
+
+A biplot is shown at \autoref{biplot}. The biplot combines the principal component scores and the loadings from the eigenvectors in a single plot. As can be seen, most of the eigenvectors associated with the original variables (apart from RPM) are roughly in the direction of the first principal component, whilst the eigenvector associated with the RPM variable is almost orthogonal to those other eigenvectors, in the direction of the second principal component. This reflects what we saw earlier in the correlation plots and matrices. 
+
+Amongst the eigenvectors that are aligned in the direction of the first PC, they can be split into two sub-groups, those that are positive in the direction of the second PC (MPG, horsepower and price) and, those that are in the negative direction of the second PC (engine size, weight, fuel tank capacity). 
+
+```{r, biplot, fig.cap='Biplot of the data \\label{biplot}'}
+fviz_pca(pc_scale, xlab='PC1', ylab='PC2') # biplot
+```
+
+The quality of representation of the variables on a factor map is called cos2 (square cosine, squared coordinates). A matrix of variables $cos^2$ values from the `factoMineR` model is shown at \autoref{cos2}. Note that:
+
+- A high $cos^2$ indicates a good representation of the variable on the principal component. In this case the variable is positioned close to the circumference of the correlation circle;
+- A low $cos^2$ indicates that the variable is not perfectly represented by the PCs. In this case the variable is close to the center of the circle;
+- For a given variable, the sum of the $cos^2$ on all the principal components is equal to one.^[@kassambara_practical_2017.]
+
+
+```{r, cos2}
+cos2 <- mod_miner$var$cos2
+colnames(cos2) <- c('PC1','PC2','PC3','PC4','PC5')
+knitr::kable(cos2, digits = 3, caption = '$Cos^2$ of variables from `FactoMineR` \\label{cos2}')
+```
+
+### (e) How many components to retain?
+
+A screeplot, as produced by `prcomp`, is shown at \autoref{scree}. It suggests that two components should be retained. This is unsurprising, given that all of the variables appeared to be explained by the first two principal components: the second component representing the RPM variable and; the first component representing all of the other variables (which, as was seen earlier, were all highly correlated with each other.) Morevoer, as can be seen from \autoref{mineR_sum}, the cumulative percentage of variance explained by the first two components is 83%. This only increases by an additional 7% with the addition of a third component. It is deemed that the extra 7% is not worth reducing the parsimony or simplicity of the model. 
+
+```{r, scree, fig.cap='Screeplot of components produced by `prcomp` \\label{scree}', out.width='100%'}
+screeplot(pc_scale, main='', type = 'lines')
+```
+
+
+### (f) Relation between observations and each of the components
+
+PC scores show where, on the dimensions of the principal components, each of the observations lie. When examined in conjunction with the biplot, it can illustrate how each observation is explained by each component. 
+
+To take one stand-out observation as an example, the Mercedes 190E, from the biplot, it can be seen that it is located far out in the upper right quadrant. The score output from `prcomp` for this observation confirms this:
+
+```{r, merc,}
+pc_scale$x["Mercedes-Benz 190E          ",]
+```
+
+being located 4.9 along the PC1 axis and 4 along the PC2 axis. 
+
+### (g) Cars by origin
+
+The library `factoextra` was used to create a screeplot and correlation circle of the dataset at \autoref{factoextra}.^[@kassambara_practical_2017.] 
+
+```{r, factoextra, fig.cap='Screeplot and correlation circle from factoextra \\label{factoextra}', fig.show='hold', out.width='50%'}
+fviz_eig(pc_scale) # screeplot
+fviz_pca_var(pc_scale, xlab='PC1', ylab='PC2') # correlation circle - like the biplot
+```
+
+\autoref{origin_plot} shows a biplot representing the cars by origin: USA and non-USA. 
+
+```{r, origin_plot, fig.cap='Biplot showing cars by origin \\label{origin_plot}'}
+fviz_pca_biplot(pc_scale, col.ind = cars_origin.df$Origin, addEllipses = TRUE,
+                legend.title='Origin of cars', geom.ind = 'point',
+                xlab='PC1', ylab='PC2')
+```
+
+What is striking about this plot, is how the split of the dataset into two groups (USA and non-USA) conforms to the patterns and clustering we saw earlier in the biplot. 
+
+USA cars generally conform to the variability represented along the engine size, weight and fuel tank capacity eigenvectors, whereas non-USA cars to that along the MPG, horsepower and price eigenvectors. RPM is marginally more cosely aligned with non-USA cars than with USA cars as an explanatory factor. 
+
+
+# Second analysis
+
+In the second analysis, the dataset is split into two groups comprising:
+
+- USA cars, and;
+- non-USA cars and,
+the PCA is repeated using only those cars from the USA. 
+
+```{r, split}
+x <- split(cars_origin.df, cars_origin.df$Origin)
+usa <- x[['USA']][,-1]
+```
+
+A summary of the second PCA, using cars from the USA only, is provided in the following tables and plots.  
+
+### (a_2) Eigenvalues and eigenvectors
+
+The eigenvalues for the dataset containing only the USA cars is below:
+
+```{r, eigen2}
+# PCA
+# base R
+usa_prcomp = prcomp(usa, scale. = TRUE)
+# using factominer
+usa_miner <- PCA(usa, scale.unit = TRUE, graph = FALSE)
+
+#(a) eigenvalues and eigenvectors
+# eigen values
+ev = (usa_prcomp$sdev)^2; ev
+```
+
+```{r, eigenvec2}
+knitr::kable(usa_prcomp$rotation, digits = 2, caption = 'USA Eigenvectors as calculated by `prcomp`. \\label{eigenvec2}')
+```
+
+```{r, mineR_sum2}
+knitr::kable(usa_miner$eig, digits=3, caption='USA Eigenvalues and percentage of variance from FactoMineR \\label{mineR_sum2}')
+```
+
+### (b) Amount of information explained by components
+
+```{r, pca_sum2}
+knitr::kable(summary(usa_prcomp)[6], digits=3, caption = 'USA Information and variance explained by components (as calculated by `prcomp`) \\label{pca_sum2}')
+```
+
+### (c) Factor loadings
+
+```{r, scores2}
+knitr::kable(head(usa_prcomp$x, n=5L), digits=3, caption = 'USA Scores of the rotated data \\label{scores2}')
+```
+
+### (d) Correlation between original variables and principal components
+
+```{r, facto_cor2}
+knitr::kable(usa_miner$var$coord, digits = 3, caption = 'USA Correlation matrix between variables and PCs produced by FacotMineR \\label{facto_cor2}')
+```
+
+```{r, biplot2, fig.cap='USA Biplot of the data \\label{biplot2}'}
+fviz_pca(usa_prcomp, xlab='PC1', ylab='PC2') # biplot
+```
+
+```{r, cos2_2}
+cos2_2 <- usa_miner$var$cos2
+colnames(cos2_2) <- c('PC1','PC2','PC3','PC4','PC5')
+knitr::kable(cos2_2, digits = 3, caption = 'USA $Cos^2$ of variables from `FactoMineR` \\label{cos2_2}')
+```
+
+### (e) How many components to retain?
+
+As before, it would seem that retaining 2 components would be optimal, given the look of the screeplot and that they account for over 85% of the cumulative percentage of variance.
+
+```{r, scree2, fig.cap='USA Screeplot of components produced by `prcomp` \\label{scree2}', out.width='100%'}
+screeplot(usa_prcomp, main='', type = 'lines')
+```
+
+### (f) Relation between observations and each of the components
+
+To take one stand-out observation as an example, the Ford Crown Victoria, from the biplot, it can be seen that it is located in the upper right quadrant.
+
+```{r, Ford}
+usa_prcomp$x["Ford          Crown_Victoria",]
+```
+
+# Conclusion
+
+The cumulative percentage of variance accounted for by 2 components is about 2% higher in respect of the dataset comprising only USA cars, as opposed to the full dataset. 
+
+When the data is limited to USA cars only, the cylinders and engine size variables become almost completely parallel to the first component, whereas with the full dataset, they had been at a greater positive angle from that axis. Morevoer, the RPM loading is also much closer to the axis of the second component when the dataset is restricted to USA cars only. 
+
+The $cos^2$ of the variables for the USA only dataset is also slightly higher in respect of the first two components when compared to the full dataset. 
+
+In summary, it can be stated that the first two components 'fit' the data better when the dataset is limited to USA cars only compared to the full dataset. 
+
+
+
+
+# Declaration
+
+All work contained in the submission is the student's own except for others work which is clearly referenced. 
+
+
+# References
+
+
+
+

@@ -1,0 +1,386 @@
+---
+title: "STAT8008 Time Series Project"
+author: "Paul Christopher, R00207143"
+date: "12/17/2021"
+output:
+  pdf_document:
+    fig_caption: yes
+  bookdown::pdf_document2:
+    fig_caption: yes
+bibliography: tsbib.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, comment='',
+            dev="cairo_pdf", fig.width=7, fig.height=3.5)
+
+if(!require(stargazer)) install.packages("stargazer", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(ggthemes)) install.packages("ggthemes", repos = "http://cran.us.r-project.org")
+if(!require(imputeTS)) install.packages("imputeTS", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(forecast)) install.packages("forecast", repos = "http://cran.us.r-project.org")
+if(!require(tseries)) install.packages("tseries", repos = "http://cran.us.r-project.org")
+
+library(ggplot2); library(ggthemes)
+library(stargazer)
+```
+
+```{r set-theme}
+theme_set(theme_tufte())
+```
+
+# Introduction
+
+The dataset household_power_consumption.txt contains 2,075,259 measurements gathered in a house located in Sceaux between December 2006 and November 2010 (47 months).^[See the [UCI Machine Learning Repository.](https://archive.ics.uci.edu/ml/datasets/individual+household+electric+power+consumption)] The measurements of the household are taken with a one-minute sampling rate over the almost 4 year period. 
+
+The analysis of this project will be focused on the monthly averaged global_active_power variable which measures the amount of electrical power consumed by the household. 
+
+## Data cleaning and manipulation
+
+The first task was to check the dataset for missing values. A summary of the missing values is given in the table and the associated graphs at \autoref{NAplot} and \autoref{NAplot2}. 
+
+```{r NAs, message=FALSE, results='asis', comment=''}
+library(imputeTS)
+library(kableExtra)
+elec <- readRDS("elec.rds")
+```
+
+```{r, NAplot, message=FALSE, fig.cap='Distribution of missing values in the dataset. \\label{NAplot}'}
+ggplot_na_distribution2(elec$Global_active_power)
+```
+
+```{r, NAplot2, fig.cap='Distribution of missing values in dataset. \\label{NAplot2}'}
+ggplot_na_gapsize(elec$Global_active_power)
+```
+
+Missing values of the global_active_power variable needed to be estimated by interpolation of previous and posterior obsrvations. The `imputeTS` package was used for the interpolation of missing values. It offers multiple state-of-the-art imputation algorithm implementations along with plotting functions for time series missing data statistics. See @RJ-2017-009 for more information about this package.
+
+Data classed as arbitrary missing was that which included up to 83 consecutive missing values. However, as can be seen, most of the data was monotone missing, with the highest length of consecutively missing data being 7226 NA's in a row. This represented approximately 5 consecutive days worth of data. This represents a problem with the data and may skew the monthly averages to be calculated from the data. A possible solution may be to apply the Kalman imputaiton algorithm, which @Wong21 has shown to be the best algorithm in the `imputeTS` package for large monotone missing blocks.  
+However @RJ-2017-009 warn that applying this imputation algorithm could take several days to complete on an ordinary computer. Therefore, the `na_ma()`^[See @RJ-2017-009.] algorithm in `imputeTS` was used to impute the missing values, despite its less than optimal imputation algorithm. 
+
+Once missing data was replaced with imputed values as above, `lubridate` and `dplyr` were then used to create a new time series of the monthly power averages, as transformed from the minute-interval data, for analysis. 
+
+# Preliminary analysis
+
+A plot of the transformed time series is shown at \autoref{ts_plot}. 
+
+```{r, ts_plot, fig.cap='Plot of the time series. \\label{ts_plot}'}
+ts <- readRDS("Final_ts.rds")
+library(forecast)
+autoplot(ts) + xlab("Year") + ylab("kW")
+```
+
+Summary statistics for the time series are as follows:
+
+```{r, ts_sumstat, comment='', echo=FALSE}
+summary(ts)
+```
+
+A decomposition of the time series is shown at \autoref{ts_decom}. 
+
+```{r, ts_decom, fig.cap='Decomposed time series. \\label{ts_decom}'}
+fit <- stl(ts, s.window = 7) # stl decomposition
+autoplot(fit) + xlab("Year")
+```
+
+It would appear that an additive model is appropriate given that the seasonal variance is relatively constant, albeit that in 2008 the seasonal trough was lower than usual.  
+
+There is strong seasonality, with peaks occurring in the winter. However, the overall trend is slightly downwards between 2007 and 2011. The greatest contribution to the overall series is the seasonal component, as can be seen from the range bars at the right of the decomposed series plots. A seasonplot is also shown at \autoref{seasonplot}.
+
+```{r, seasonplot, fig.cap="Seasonplot \\label{seasonplot}"}
+ggseasonplot(window(ts), year.labels = TRUE) + ggtitle('') +
+  ylab("kW")
+```
+
+
+```{r, lag_plot, fig.margin=FALSE, fig.cap='Lag plots of the time series \\label{lag_plot}', fig.width=5, fig.height=3.5}
+gglagplot(ts) + theme_classic()
+```
+
+
+Another graphical tool to check for seasonality is the lag plot. A matrix of lag plots for different lags from 1 to 12 is shown at \autoref{lag_plot}. The relationship is strongly positive at lag 12, reflecting the strong seasonality in the data. 
+
+There a number of ways to address seasonality in time series data. For example, differencing can be used to eliminate seasonality effects. As the seasonality is annual, the periodicity of this seasonal component would be 12. A lag-12 seasonal difference operator can be defined as:
+$$\nabla_{12}y_{t} = (1-B^{12})y_{t} = y_{t} - y_{t-12}$$
+where $y_{t}$ denotes the power consumption in month $t$, and $y_{t-12}$ represents the power consumption 12 months earlier. 
+
+# Time series modelling
+
+Given the strong seasonal component in the data, the most appropriate classical method (*aka* exponential smoothing) to describe this data would be Holt-Winter's seasonal method. 
+
+The Holt-Winter's seasonal method comprises the forecast equation and three smoothing equations - one for the level $\ell_{t}$, one for the trend $b_{t}$, and one for the seasonal component $s_{t}$, with corresponding smoothing parameters $\alpha, \beta^* \text{and} \gamma$. The seasonality of the data is denoted by $m = 12$. 
+
+In the additive model, the seasonal variation is independent of the absolute level of the time series, but it takes approximately the same magnitude each year. 
+
+In the multiplicative model, the seasonal variation takes the same relative magnitude each year. This means that the seasonal variation equals a certain percentage of the level of the time series. The amplitude of the seasonal factor varies with the level of the time series.^[@Linde05.] 
+
+The additive method is preferred when the seasonal variations are roughly constant through the series. With this method, the seasonal component is expressed in absolute terms in the scale of the observed series, and in the level equation the series is seasonally adjusted by subtracting the seasonal component. Within each year, the seasonal component will add up to approximately zero. 
+
+The component form for the additive method is:
+\begin{align*}
+\hat{y}_{t+h|t} &= \ell_{t} + hb_{t} + s_{t+h-m(k+1)} \\
+\ell_{t} &= \alpha(y_{t}-s_{t-m}) + (1-\alpha)(\ell_{t-1}+b_{t-1}) \\
+b_{t} &= \beta^* (\ell_{t} - \ell_{t-1}) + (1-\beta^*)b_{t-1} \\
+s_{t} &= \gamma(y_{t}-\ell_{t-1}-b_{t-1} + (1-\gamma)s_{t-m})
+\end{align*}
+
+The output for the additive model is shown below. The plot for the additive model is at \autoref{auto_plot}. 
+
+```{r, auto_add, comment=''}
+fit_auto <- ets(ts)
+summary(fit_auto)
+```
+
+```{r, auto_plot, fig.cap='additive model \\label{auto_plot}'}
+autoplot(fit_auto)
+```
+
+The `ets()` function uses the Akaike's Information Criterion corrected for small sample bias (AICc) for choosing the best model by default.The AICc is defined as follows:
+
+$$\text{AIC}_{\text{c}} = \text{AIC} + \frac{2k(k+1)}{T-k-1},$$
+where AIC is defined as:
+$$\text{AIC} = -2\log(L) + 2k,$$
+where L is the likelihood of the model and k is the total number of parameters and initial states that have been estimated.^[@hyndman_forecasting_2018.]
+
+The output for the multiplicative model is shown below:
+
+```{r, mult, comment=''}
+# fit a multiplicative model
+fit_mult <- ets(ts, model = "MNM")
+summary(fit_mult)
+```
+
+It is interesting that when you do not explicitly state the model, the function chooses the additive type of model automatically based on this criterion. As can be seen, the AICc for the default model is `r round(summary(fit_auto)[[4]],2)`, whereas the AICc for the multiplicative model is `r round(summary(fit_mult)[[4]],2)`. 
+
+The fact that the `ets()` function automatically chose the additive model based on the AICc criterion is not surprising, given that the earlier visual inspection of the seasonal component of the decomposed series showed the seasonal component as having reasonably constant variance. 
+
+## Is the time series stationary?
+
+A time series is said to be *strictly stationary* if its properties are not affected by a change in the time origin. The stationarity assumption means that the probability distribution of $y_{t}$ is the same for all time periods and can be written as $f(y)$. Weak stationarity is defined as follows: (1) the expected value of the time series does not depend on time and (2) the autocovariance function defined as $Cov(y_{t}, y_{t+k})$ for any lag `k` is only a function of `k` and not time.^[@montgomery_introduction_2008.]
+
+As any violation of stationarity creates estimation problems for ARIMA models, it is necessary, in the first instance, to check whether the time series is stationary and, in the second instance, if it is not stationary, to transform the original time series by, for example, differencing it.  
+
+One method of checking whether the series is stationary is to create a correlogram or auto-correlation function plot. 
+
+```{r, acf_plot, fig.margin=TRUE, fig.cap='Correlogram of time series. \\label{acf_plot}'}
+aout <- acf(ts, main='') # correlogram
+```
+The correlogram at \autoref{acf_plot} shows that auto-correlation functions drop off reasonably quickly but there is some cyclicality, especially around lag 12, which is unsurprising, given that the data is monthly and there is annual seasonality. The auto-correlation function plot is not strongly suggestive of a non-stationary time series, seasonality effects excluded. 
+
+However, the earlier decomposed plot of the time series seems to show a slight downward trend, particularly in the first half of the series, although the trend seems to stabilise after that. This is mildly indicative of non-stationarity. 
+
+The identification process can be assisted by another plot, the Partial Auto-Correlation Function plot.
+
+```{r, pacf, fig.margin=TRUE, fig.cap='Partial Auto-Correlation Function plot'}
+pacf(ts, main='')
+```
+
+The output of the PACF plot suggests that an AR(1) process may be appropriate.
+
+More formal statistical tests for assessing stationarity are the Augmented Dickey-Fuller, the Phillips-Perron and the KPSS unit root tests. 
+
+The Augmented Dickey-Fuller and Phillips-Perron tests use the following null and alternative hypotheses:
+
+- $H_{0}$: The time series is non-stationary. In other words, it has some time-dependent structure and does not have constant variance over time.
+- $H_{A}$: The time series is stationary.
+
+If the p-value from the test is less than some significance level (e.g. $\alpha$ = .01), then we can reject the null hypothesis and conclude that the time series is stationary. The results of both tests on the time series are shown below:
+
+```{r adf_test, message=FALSE, results='asis', comment=''}
+# Augmented Dickey Fuller for stationarity
+library(tseries)
+adf.test(ts, k=1)
+pp.test(ts)
+```
+
+Since the p-values associated with both tests is greater than .01, we fail to reject the null hypothesis and conclude that the time series may be non-stationary.
+
+The KPSS test is set up in the opposite direction to the ADF and PP tests in that the null hypothesis is that the series is trend stationary and the alternative hypothesis is that it is non-stationary.^[@rtseries] 
+
+To confirm our suspicions, the next step is to take a first difference of the time series and perform these stationarity tests on the differenced series: 
+
+```{r diff_st_tests, message=FALSE, results='asis', comment='', indent="    "}
+dts <- diff(ts)
+suppressWarnings(adf.test(dts, k=1))
+suppressWarnings(pp.test(dts))
+```
+
+The results of both tests for the first-differenced series now show a p-value less than `r suppressWarnings(adf.test(dts, k=1)$p.value)`, indicating stationarity. A plot of the differenced time series is shown at \autoref{diff_decom_plot}.
+
+```{r, diff_decom_plot, fig.cap='Decomposition of differenced time series. \\label{diff_decom_plot}'}
+autoplot(decompose(dts)) + xlab("Year") + ggtitle('')
+```
+
+## ARIMA modelling
+
+If successive observations show serial dependence, 'forecasting methods based on exponential smoothing may be inefficient and sometimes inappropriate because they do not take advantage of the serial dependence in the observations in the most effective way. To formally incorporate this dependent structure', ARIMA models are used.^[@montgomery_introduction_2008.]
+
+We have already concluded from the unit root tests above that the series my be integrated of order 1 and have already differenced the time series to account for that and remove the trend. We have also concluded that the series may be auto-correlated of order 1 from the ACF and PACF plots. This was because the ACF plot showed sinusoidal behaviour, whilst the PACF plot showed a single spike at the first lag, followed by a sudden decline to zero for all subsequent lags. 
+
+Using the terminology of Box and Jenkins, our preliminary model, ignoring seasonality for the moment, can therefore be described as ARIMA (1,1,0). 
+
+However, we have also concluded that the data series is seasonal of periodicity 12. 
+
+@hyndman_forecasting_2018 advises that when it is obvious that the series is seasonal it is better to seasonally difference the series before taking the first difference to ascertain whether seasonally differencing the series corrects problems associated with non-stationarity. If so, it may then be unnecessary to also take the first difference, following the principle of model parismony. 
+
+```{r diff_plots, fig.cap='Plots of the original time series, the seasonally differenced series and the doubly differenced series. \\label{diff_plots}'}
+cbind("Original series (kW)" = ts,
+      "Annual change\nin power cons." = diff(ts,12),
+  "Doubly\ndifferenced series" = diff(diff(ts,12),1)) %>%
+  autoplot(facets=TRUE) +
+  xlab("Year") + ylab("") +
+  ggtitle("Power consumption") 
+```
+
+As can be seen from \autoref{diff_plots}, doubly differencing the series does not appear to make much difference to the stationarity or other general appearance of the series when compared to the seasonally differenced series. 
+
+Lets try more formal tests of stationarity on the series which has only been seasonally differenced:
+
+```{r, adf_sadts}
+# seasonally difference the series
+sadts <- diff(ts, 12)
+suppressWarnings(adf.test(sadts, k=1))
+suppressWarnings(pp.test(sadts))
+```
+
+The results of both tests for the seasonally-differenced series  show a p-value less than `r suppressWarnings(adf.test(sadts, k=1)$p.value)`, indicating stationarity. Based on these formal tests, it may be unnecessary to take a first difference of the series in addition to seasonally differencing it. 
+
+Similarly, the kpss.test indicates that the seasonally differenced series now has little non-stationarity to worry about:
+
+```{r, kpss_sadts}
+suppressWarnings(kpss.test(sadts))
+```
+
+*i.e.* based on a p-value > .05, we cannot reject the null hypothesis that the series is stationary. 
+
+```{r, sadts_plots, fig.cap='Seasonally differenced power consumption. \\label{sadts_plots}'}
+ts %>% diff(lag=12) %>% ggtsdisplay()
+```
+
+The aim now is to find an appropriate ARIMA model based on the ACF and PACF shown in \autoref{sadts_plots}.There are no significant spikes in either the ACF or the PACF plots. Consequently, we begin with an ARIMA(0,0,0)(0,1,0)~12~  model, indicating a seasonal difference only. 
+
+```{r, arima1}
+fit <- Arima(ts, order=c(0,0,0), seasonal=c(0,1,0),
+              lambda=0)
+```
+
+## Assessing the ARIMA models
+
+@hyndman_forecasting_2018 advise that:
+
+> Good models are obtained by minimising the AIC, AICc or BIC. Our preference is to use the AICc. It is important to note that these information criteria tend not to be good guides to selecting the appropriate order of differencing (d) of a model, but only for selecting the values of p and q. This is because the differencing changes the data on which the likelihood is computed, making the AIC values between models with different orders of differencing not comparable. So we need to use some other approach to choose d, and then we can use the AICc to select p and q.
+
+The Ljung-Box test is applied to the residuals of a fitted ARIMA model and may be defined as:
+
+- $H_{0}$: The data are independently distributed (*i.e.* the correlations in the population from which the sample is taken are 0, so that any observed correlations in the data result from randomness of the sampling process);
+- $H_{A}$: The data are not independently distributed; they exhibit serial correlation.
+
+Looking more closely at the residuals of the ARIMA(0,0,0)(0,1,0)~12~ using the `checkresiduals` function (\autoref{arima_res}), we can see that Ljung-Box test gives a p-value of 0.9314:
+
+```{r, arima_res, fig.cap='Residuals from the fitted ARIMA(0,0,0)(0,1,0)~12~ model for the power consumption data. \\label{arima_res}'}
+checkresiduals(fit, lag=36)
+```
+One can also see that most of the autocorrelations are within the threshold limits, apart from the 12th lag. This may suggest a seasonal MA(1) component. 
+
+One can therefore try an ARIMA(0,0,0)(0,1,1)~12~ model to see if it fits the data better. 
+
+```{r, arima2, fig.cap='Residuals from the fitted ARIMA(0,0,0)(0,1,1)~12~ model for the power consumption data. \\label{arima2}'}
+fit2 <- Arima(ts, order=c(0,0,0), seasonal=c(0,1,1),
+              lambda=0)
+checkresiduals(fit2, lag=36)
+```
+
+Looking at the ACF plot in \autoref{arima2} one can see that all of the autocorrelations are now within the threshold limits. Moreover, the p-value from the Ljung-Box test is slightly higher than for the ARIMA(0,0,0)(0,1,0)~12~ model. Accordingly, the ARIMA(0,0,0)(0,1,0)~12~ model is to be preferred amongst those two ARIMA models.
+
+Finally, for the sake of completeness, it may be interesting to examine an ARIMA(1,1,0) model, given the initial findings before seasonality had been considered above. 
+
+```{r, arima3, fig.cap='Residuals from the fitted ARIMA(1,1,0) model for the power consumption data. \\label{arima3}'}
+fit3 <- Arima(ts, order = c(1,1,0), lambda = 0)
+checkresiduals(fit3, lag=36)
+```
+
+As can be seen from the ACF plot and the p-value associated with the Ljung-Box test, this model is inferior to the two seasonal models considered previously.
+
+## Using the `auto.arima` function
+
+Now that we have fitted and examined a few ARIMA models, it would be interesting to compare them with the ARIMA model that the `auto.arima` function suggests. The default arguments are designed for rapid estimation of models for many time series. Based on the recommendations of the authors, stepwise=FALSE and approximation=FALSE were set as arguments to the function, given that we are examining only time series.^[@rforecast.]
+
+
+
+```{r, autoarima, fig.cap='ARIMA model for the power consumption data suggested by `auto.arima`. \\label{autoarima}'}
+fit7 <- auto.arima(ts, stepwise = FALSE, approximation = FALSE)
+checkresiduals(fit7, lag=36)
+```
+
+As can be seen, an ARIMA(0,0,0)(0,1,1)~12~, *i.e* a seasonally differenced with a seasonal MA(1) component, model was selected by the algorithm. 
+
+
+## Classical or ARIMA model?
+
+Examining the residuals of the classical model created above, one can see that the model performs well. 
+
+```{r, clas_res, fig.cap='Residuals from the ETAS(A,N,A) classical model. \\label{clas_res}'}
+checkresiduals(fit_auto, lag=36)
+```
+
+However, the p-value associated with the Ljung-Box test is lower than that associated with the ARIMA(0,0,0)(0,1,1)~12~ model. One could say, with some justification, that the ARIMA model performs somewhat better than the classical model. 
+
+
+# Forecasts
+
+Twelve month forecasts for the next periods are generated next.
+\autoref{ets_fcast} shows the 12 month forecasts plotted for both the additive and multiplicative classical models. 
+
+```{r, ets_fcast, fig.show="hold", out.width="50%", fig.cap='12 month forecast for (a) classical additive ETS(A,N,A) and (b) multiplicative (M,N,M) models. \\label{ets_fcast}'}
+# Classical-based forecasts
+fit_auto %>% forecast(h=12) %>% autoplot # additive
+fit_mult %>% forecast(h=12) %>% autoplot # multiplicative
+```
+
+\autoref{arima_fcast} shows the 12 month forecasts plotted for both the `auto.arima` and the ARIMA(0,0,0)(0,1,0)~12~ models.
+
+```{r, arima_fcast, fig.show="hold", out.width="50%", fig.cap='12 month forecast for (a) auto.arima and (b) ARIMA(0,00)(0,1,0)~12~ models. \\label{arima_fcast}'}
+fit %>% forecast(h=12) %>% autoplot() # ARIMA(0,0,0)(0,1,0)
+fit7 %>% forecast(h=12) %>% autoplot # auto.arima
+```
+
+The power of prediction of the various models, classical and ARIMA, can be checked by forecasting the last periods of the original time series and comparing them with the actual observed values for such period. This was done by sub-setting the original time series so as to exclude the last 11 months and fitting the models on that reduced time series. A plot at \autoref{fcast_comp} was then generated of the full time series, including the last 11 months and overlaid on same were the predictions from the four models: (a) classical additive; (b) classical multiplicative; the `auto.arima` model and; (d) the ARIMA(0,0,0)(0,1,0)~12~ model fitted manually. 
+
+```{r, fcast_comp, fig.cap='Comparison of the forecasts generated by the four models with the actual time series. \\label{fcast_comp}'}
+ts2 <- window(ts, end = c(2009,12))
+tsfit1 <- ets(ts2)
+tsfit2 <- ets(ts2, model = "MNM")
+tsfit3 <- Arima(ts2, order=c(0,0,0), seasonal=c(0,1,0))
+tsfit4 <- auto.arima(ts2, stepwise = FALSE, approximation = FALSE)
+
+autoplot(ts) +
+  autolayer(forecast(tsfit1, h=12), series = 'Additive ETS', PI=FALSE) +
+  autolayer(forecast(tsfit2, h=11), series='Mult ETS', PI=FALSE) +
+  autolayer(forecast(tsfit3, h=11), series='ARIMA(0,0,0)(0,1,0)', PI=FALSE) +
+  autolayer(forecast(tsfit4, h=11), series='ARIMA(0,0,0)(0,1,1)', PI=FALSE)
+```
+
+Ultimately, the forecasts produced by all four models are very similiar. However, it looks like the auto.arima (ARIMA(0,0,0)(0,1,1)) and the Multiplicative classical model produce the best forecasts. 
+
+A table that compares the accuracy measures for all four models is provided at \autoref{acc_tab}. It was produced using `forecasts::accuracy`.^[@rforecast.] It is obvious that the forecasts produced by the ARIMA(0,0,0)(0,1,1)~12~ (as produced by `auto.arima`) and the ARIMA(0,0,0)(0,1,0)~12~ model created manually are identical. Based on the criteria used in the `accuracy` function, it appears that the classical multiplicative model produces the best forecasts. 
+
+```{r, acc_tab}
+tstest <- window(ts, start=c(2010,1), end=c(2010,11))
+a <- accuracy(forecast(tsfit1), tstest)[2,]
+b <- accuracy(forecast(tsfit2), tstest)[2,]
+c <- accuracy(forecast(tsfit3), tstest)[2,]
+d <- accuracy(forecast(tsfit4), tstest)[2,]
+accmat <- rbind(a,b,c,d)
+rownames(accmat) <- c("Additive ETS", "Multiplicative ETS", "ARIMA(0,0,0)(0,1,0)", "ARIMA(0,0,0)(0,1,1)")
+knitr::kable(accmat, caption = "Comparison of model accuracies. \\label{acc_tab}") %>% 
+  kable_classic()
+```
+
+
+# References
+
+
+
+
