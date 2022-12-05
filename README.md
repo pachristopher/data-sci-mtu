@@ -4,9 +4,9 @@
   <h4>A collection of projects from selected Data Science modules.</h4>
 </div>
 
-- [STAT8008 Time Series](https://github.com/pachristopher/data-science-mtu#stat8008-time-series-and-pca)
-  - [A1: Household Electric Consumption](https://github.com/pachristopher/data-science-mtu#a1-forecasting-household-electric-consumption)
-  - [A2: Principal Component Analysis](https://github.com/pachristopher/data-science-mtu#a2-principal-component-analysis)
+- [STAT8008 Time Series](https://github.com/pachristopher/data-sci-mtu#stat8008-time-series-and-pca)
+  - [A1: Household Electric Consumption](https://github.com/pachristopher/data-sci-mtu#a1-forecasting-household-electric-consumption)
+  - [A2: Principal Component Analysis](https://github.com/pachristopher/data-sci-mtu#a2-principal-component-analysis)
 
 ---
 
