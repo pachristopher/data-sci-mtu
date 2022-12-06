@@ -134,5 +134,5 @@ health statistics for the Nation.
 The first dataset provided [comp8060/NhanesDemoAdapted.csv](./comp8060/NhanesDemoAdapted.csv) has been adapted and changed from the demographic set.
 The second dataset  [comp8060/NhanesFoodAdapted.csv](./comp8060/NhanesFoodAdapted.csv) involves the diet of individuals. Again this has been adapted and changed from the original Nhanes dataset. The reduced dataset has multiple entries for each individual (as identified by the same SEQN as in the first dataset). Each line involves a different recorded meal for an individual and contains the nutritional information of the meal such as grams, calories, protein, *etc.*
 - **Project Specification:**
-The objective of this project is to produce an application that allows the user to explore some of the most interesting aspects of these two adapted Nhanes datasets. (see [comp8060/COMP8060_Project_Specification.pdf](./comp8060/COMP8060_Project_Specification.pdf))
-- **Python File:** [comp8060/Comp8060Project.py](./comp8060/COMP8060Project.py)
+The objective of this project is to produce an application that allows the user to explore some of the most interesting aspects of these two adapted Nhanes datasets. (see [comp8060/COMP8060_ProjectSpecification.pdf](./comp8060/COMP8060_ProjectSpecification.pdf))
+- **Python File:** [comp8060/Comp8060Project.py](./comp8060/Comp8060Project.py)
