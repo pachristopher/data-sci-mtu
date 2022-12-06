@@ -7,6 +7,8 @@
 - [STAT8008 Time Series](https://github.com/pachristopher/data-sci-mtu#stat8008-time-series-and-pca)
   - [A1: Household Electric Consumption](https://github.com/pachristopher/data-sci-mtu#a1-forecasting-household-electric-consumption)
   - [A2: Principal Component Analysis](https://github.com/pachristopher/data-sci-mtu#a2-principal-component-analysis)
+- [COMP8060 Scientific Programming in Python](https://github.com/pachristopher/data-sci-mtu#comp8060-scientific-programming-in-python)
+    - [Project 1](https://github.com/pachristopher/data-sci-mtu#project1) 
 
 ---
 
@@ -53,7 +55,7 @@ The objective of this assignment is to develop and test a model for forecasting 
 
 The objective of this assignment is to ascertain the extent to which the dimensionality of a given dataset can be reduced through the method of principal component analysis.
 
-- **Data:** [stat8008/proj2-pca/data/PCA_Project.sav](./stat8008/proj2-pca/PCA_Project.sav)
+- **Data:** [stat8008/proj2-pca/PCA_Project.sav](./stat8008/proj2-pca/PCA_Project.sav)
 - **Notebook:** [PCAProj.Rmd](./stat8008/proj2-pca/PCAProj.Rmd)
 
 #### Tasks:
@@ -106,3 +108,31 @@ The objective of this assignment is to ascertain the extent to which the dimensi
   </li>
 </ul>
 
+## COMP8060 Scientific Programming in Python
+
+Autumn Term, 2020
+
+### Getting Started
+
+- Create and activate the `comp8060-env` environment.
+    ```bash
+    conda env create -f comp8060-env.yml
+    conda activate comp8060-env
+    ```
+
+- Change to the `comp8060` directory, then run `python Comp8060Project.py`. 
+
+### Project 1
+
+- **Data:** 
+The National Health and Nutrition Examination Survey (NHANES) is a program of studies
+designed to assess the health and nutritional status of adults and children in the United States.
+The survey is unique in that it combines interviews and physical examinations. NHANES is a
+major program of the National Center for Health Statistics (NCHS). NCHS is part of the Centers
+for Disease Control and Prevention (CDC) and has the responsibility for producing vital and
+health statistics for the Nation.
+The first dataset provided [comp8060/NhanesDemoAdapted.csv](./comp8060/NhanesDemoAdapted.csv) has been adapted and changed from the demographic set.
+The second dataset  [comp8060/NhanesFoodAdapted.csv](./comp8060/NhanesFoodAdapted.csv) involves the diet of individuals. Again this has been adapted and changed from the original Nhanes dataset. The reduced dataset has multiple entries for each individual (as identified by the same SEQN as in the first dataset). Each line involves a different recorded meal for an individual and contains the nutritional information of the meal such as grams, calories, protein, *etc.*
+- **Project Specification:**
+The objective of this project is to produce an application that allows the user to explore some of the most interesting aspects of these two adapted Nhanes datasets. (see [comp8060/COMP8060_Project_Specification](./comp8060/COMP8060_Project_Specification))
+- **Python File:** [comp8060/COMP8060Project.py](./comp8060/COMP8060Project.py)

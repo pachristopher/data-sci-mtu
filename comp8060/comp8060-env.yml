@@ -1,0 +1,9 @@
+name:   comp8060-env
+channels:
+  - defaults
+dependencies:
+  - pandas
+  - numpy
+  - matplotlib
+  - seaborn
+prefix: /usr/local/Caskroom/miniconda/base/envs/comp8060-env
